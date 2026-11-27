@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    name: ci (${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13", "3.14"]
+    env:
+      UV_PYTHON: ${{ matrix.python-version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
+        with:
+          python-version: ${{ matrix.python-version }}
+          enable-cache: false
+      - name: Install, lint, type-check and test each example
+        run: |
+          shopt -s nullglob
+          for manifest in */pyproject.toml; do
+            dir=$(dirname "$manifest")
+            echo "::group::$dir"
+            if [ ! -f "$dir/uv.lock" ]; then
+              echo "::error file=$manifest::$dir has no uv.lock. Commit one so installs are reproducible."
+              exit 1
+            fi
+            (
+              cd "$dir"
+              uv sync --locked
+              has() { [ -x ".venv/bin/$1" ]; }
+              if has ruff; then uv run --no-sync ruff check . && uv run --no-sync ruff format --check .; fi
+              if has mypy; then uv run --no-sync mypy .; fi
+              if has pytest; then uv run --no-sync pytest; fi
+            )
+            echo "::endgroup::"
+          done
